@@ -1,21 +1,17 @@
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 import { crx } from '@crxjs/vite-plugin';
-import manifest from './manifest.json';
+import manifest from './manifest.json' assert { type: 'json' };
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  server: {
-    port: 5173,
-    strictPort: true,
-    hmr: {
-      port: 5173
-    }
-  },
-  plugins: [crx({ manifest })],
+  plugins: [react(), crx({ manifest })],
   build: {
     rollupOptions: {
       input: {
-        popup: 'popup.html'
+        viewer: 'viewer.html',
+        panel: 'panel.html',
+        options: 'options.html',
+        devtools: 'devtools.html'
       }
     }
   }
