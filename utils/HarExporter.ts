@@ -14,7 +14,7 @@ export class HarExporter {
 
       let postDataObj = undefined;
       if (req.postData && req.method !== 'GET') {
-        const text = typeof req.postData === 'string' ? req.postData : req.postData.text || '';
+        const text = typeof req.postData === 'string' ? req.postData : req.postData?.text || '';
         postDataObj = {
           mimeType:
             req.headers?.['Content-Type'] || req.headers?.['content-type'] || 'application/json',

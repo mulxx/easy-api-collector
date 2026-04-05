@@ -15,18 +15,21 @@ This extension provides developers and QA engineers with deep insights into web 
 ## 2. Key Features
 
 ### Network Capture
+
 - XHR/Fetch request interception via Chrome Debugger API
 - WebSocket connection tracking and endpoint monitoring
 - Multi-tab support with automatic tab lifecycle management
 - Request status and timing information
 
 ### Intelligent Analysis
+
 - Page-level API grouping - understand which APIs each page depends on
 - Smart URL pattern detection - distinguish meaningful URL changes from hash/parameter variations
 - API path extraction and deduplication
 - Domain and endpoint statistics
 
 ### Data Management
+
 - Real-time data updates in popup UI
 - Clear all captured data with one click
 - JSON export for integration with analytics tools
@@ -67,6 +70,7 @@ This extension provides developers and QA engineers with deep insights into web 
 ## 5. Technical Details
 
 ### Architecture
+
 - **Manifest V3**: Modern extension format with Service Worker
 - **Background Service Worker** (`background.js`): Handles network monitoring and data management
 - **Chrome Debugger API**: Intercepts network events (XHR, Fetch, WebSocket)
@@ -74,6 +78,7 @@ This extension provides developers and QA engineers with deep insights into web 
 - **Popup UI** (`popup.html`/`popup.js`): User interface for interaction
 
 ### Permissions
+
 - `debugger`: Required to intercept network requests
 - `activeTab`: Access current tab information
 - `storage`: Store monitoring data and state
@@ -81,12 +86,13 @@ This extension provides developers and QA engineers with deep insights into web 
 - `<all_urls>`: Monitor network requests on any website
 
 ### File Structure
+
 ```
 ├── manifest.json              # Extension configuration
 ├── background.js              # Service Worker core logic
 ├── popup.html                 # Popup UI interface
 ├── popup.js                   # Popup interaction logic
-├── lens.png                   # Extension icon
+├── icon.png                   # Extension icon
 └── README.md                  # This file
 ```
 

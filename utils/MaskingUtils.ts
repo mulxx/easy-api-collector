@@ -28,14 +28,14 @@ export class MaskingUtils {
     }
 
     const lowerKeys = keysToMask.map((k) => k.toLowerCase());
-    const newObj: unknown = {};
+    const newObj: Record<string, unknown> = {};
 
-    for (const key in obj) {
+    for (const key in obj as Record<string, unknown>) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {
         if (lowerKeys.includes(key.toLowerCase())) {
           newObj[key] = '***MASKED***';
         } else {
-          newObj[key] = this.maskJsonInfo(obj[key], keysToMask);
+          newObj[key] = this.maskJsonInfo((obj as Record<string, unknown>)[key], keysToMask);
         }
       }
     }

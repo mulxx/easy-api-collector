@@ -56,7 +56,11 @@ class NetworkMonitorPopup {
 
   // #region updateRequests
   async updateRequests() {
-    const response: unknown = await this.sendMessage({ action: 'getRequests' });
+    const response = (await this.sendMessage({ action: 'getRequests' })) as {
+      requests?: Record<string, NetworkRequest[]>;
+      tabUrls?: Record<string, string>;
+      pageGroupedRequests?: PageData[];
+    };
     this.requests = response.requests || {};
     this.tabUrls = response.tabUrls || {};
     this.pageGroupedRequests = response.pageGroupedRequests || [];
@@ -66,7 +70,9 @@ class NetworkMonitorPopup {
   // #region loadStatus
   async loadStatus() {
     try {
-      const response: unknown = await this.sendMessage({ action: 'getStatus' });
+      const response = (await this.sendMessage({ action: 'getStatus' })) as {
+        isMonitoring: boolean;
+      };
       this.updateUI(response);
       await this.updateRequests();
     } catch (error) {
@@ -78,7 +84,9 @@ class NetworkMonitorPopup {
   // #region toggleMonitoring
   async toggleMonitoring() {
     try {
-      const response: unknown = await this.sendMessage({ action: 'toggleMonitoring' });
+      const response = (await this.sendMessage({ action: 'toggleMonitoring' })) as {
+        isMonitoring: boolean;
+      };
       this.updateUI(response);
 
       // Reload requests after toggle
@@ -128,7 +136,9 @@ class NetworkMonitorPopup {
       this.downloadHarBtn.disabled = true;
       this.downloadHarBtn.textContent = 'Generating...';
 
-      const response: unknown = await this.sendMessage({ action: 'getRequestsAsHar' });
+      const response = (await this.sendMessage({ action: 'getRequestsAsHar' })) as {
+        har?: string;
+      } | null;
 
       if (!response || !response.har) {
         this.showTemporaryMessage('No HTTP requests to export');
@@ -200,7 +210,7 @@ class NetworkMonitorPopup {
   // #endregion
 
   // #region updateUI
-  updateUI(response: unknown) {
+  updateUI(response: { isMonitoring: boolean }) {
     this.isMonitoring = response.isMonitoring;
     this.toggleSwitch.checked = this.isMonitoring;
     this.statusText.textContent = `Monitoring: ${this.isMonitoring ? 'ON' : 'OFF'}`;

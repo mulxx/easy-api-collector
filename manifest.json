@@ -3,24 +3,17 @@
   "description": "Monitor and analyze network requests with toggle control",
   "version": "1.0",
   "manifest_version": 3,
-  "permissions": [
-    "debugger",
-    "activeTab",
-    "storage",
-    "tabs"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "permissions": ["debugger", "activeTab", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.ts",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_icon": "lens.png"
+    "default_icon": "icon.png"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }
-

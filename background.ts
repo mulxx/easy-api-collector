@@ -3,6 +3,37 @@ import { MaskingUtils } from './utils/MaskingUtils';
 import { HarExporter } from './utils/HarExporter';
 import { NetworkRequest, TabData, PageData, PathData } from './types';
 
+// Internal type for building page-grouped requests before serialization
+interface InternalPageData {
+  page: string;
+  fullUrl: string;
+  validXHRPaths: Map<string, NetworkRequest[]>;
+  unknownXHRPaths: Set<string>;
+  webSocketPaths: Set<string>;
+}
+
+// Typed params for Chrome Debugger API events
+interface DebuggerParams {
+  requestId?: string;
+  url?: string;
+  type?: string;
+  timestamp?: number;
+  errorText?: string;
+  initiator?: unknown;
+  headers?: Record<string, string>;
+  request?: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    postData?: string;
+  };
+  response?: {
+    status: number;
+    headers: Record<string, string>;
+    mimeType?: string;
+  };
+}
+
 // Background service worker for network monitoring
 class NetworkMonitor {
   isMonitoring: boolean;
@@ -33,8 +64,8 @@ class NetworkMonitor {
     if (result.networkRequests) {
       // Convert stored data back to Map structure
       this.networkRequests = new Map();
-      for (const [tabIdStr, tabData] of Object.entries<Record<string, unknown>>(
-        result.networkRequests
+      for (const [tabIdStr, tabData] of Object.entries(
+        result.networkRequests as Record<string, Record<string, unknown>>
       )) {
         if (tabData && tabData.pageRequests) {
           const tabId = parseInt(tabIdStr, 10);
@@ -179,7 +210,8 @@ class NetworkMonitor {
 
   // #region handleMessage
   async handleMessage(message: unknown, sendResponse: (r?: unknown) => void) {
-    switch (message.action) {
+    const msg = message as { action: string; config?: Partial<AppConfig> };
+    switch (msg.action) {
       case 'toggleMonitoring':
         await this.toggleMonitoring();
         sendResponse({ isMonitoring: this.isMonitoring });
@@ -234,7 +266,7 @@ class NetworkMonitor {
         break;
 
       case 'updateConfig':
-        await StorageService.setConfig(message.config);
+        await StorageService.setConfig(msg.config!);
         this.appConfig = await StorageService.getConfig();
         sendResponse({ success: true, config: this.appConfig });
         break;
@@ -248,7 +280,7 @@ class NetworkMonitor {
 
   // #region getPageGroupedRequests
   getPageGroupedRequests(): PageData[] {
-    const pageGrouped: Record<string, PageData> = {};
+    const pageGrouped: Record<string, InternalPageData> = {};
     for (const [_, tabData] of this.networkRequests) {
       for (const [pageUrl, requests] of Array.from(tabData.pageRequests.entries())) {
         if (requests.length > 0) {
@@ -278,7 +310,7 @@ class NetworkMonitor {
                 if (!targetMap.has(normalizedPathname)) {
                   targetMap.set(normalizedPathname, []);
                 }
-                targetMap.get(normalizedPathname).push(request);
+                targetMap.get(normalizedPathname)!.push(request);
               } catch (_e) {
                 // Invalid URL
               }
@@ -342,7 +374,7 @@ class NetworkMonitor {
                 } else if (selectedRequest.postData.params) {
                   // Handle form data
                   bodyText = selectedRequest.postData.params
-                    .map((p: unknown) => `${p.name}=${p.value}`)
+                    .map((p) => `${p.name}=${p.value}`)
                     .join('&');
                 }
               }
@@ -500,13 +532,11 @@ class NetworkMonitor {
   // #region getPostData
   async getPostData(tabId: number, requestId: string): Promise<{ text: string } | null> {
     try {
-      const response: unknown = await chrome.debugger.sendCommand(
-        { tabId },
-        'Network.getRequestPostData',
-        { requestId }
-      );
+      const response = (await chrome.debugger.sendCommand({ tabId }, 'Network.getRequestPostData', {
+        requestId
+      })) as { postData?: string } | undefined;
       // Return in the expected format: { text: string }
-      if (response && response.postData) {
+      if (response?.postData) {
         return { text: response.postData };
       }
       return null;
@@ -530,6 +560,7 @@ class NetworkMonitor {
   // #region handleNetworkEvent
   handleNetworkEvent(tabId: number, method: string, params: unknown) {
     if (!this.isMonitoring) return;
+    const p = params as DebuggerParams;
 
     const tabData = this.networkRequests.get(tabId);
     if (!tabData) return;
@@ -542,8 +573,8 @@ class NetworkMonitor {
     const requests = tabData.pageRequests.get(currentUrl)!;
 
     // Apply URL filter
-    if (params.url || (params.request && params.request.url)) {
-      const urlToTest = params.url || params.request.url;
+    if (p.url || (p.request && p.request.url)) {
+      const urlToTest = p.url || p.request!.url;
       try {
         if (this.appConfig.urlFilter) {
           const regex = new RegExp(this.appConfig.urlFilter, 'i');
@@ -559,54 +590,54 @@ class NetworkMonitor {
       if (this.appConfig.typeFilter && !this.appConfig.typeFilter.includes('WebSocket')) return;
 
       const wsRequest = {
-        requestId: params.requestId,
-        url: params.url,
+        requestId: p.requestId!,
+        url: p.url!,
         method: 'WebSocket',
         headers: {},
         timestamp: Date.now() / 1000,
         type: 'WebSocket',
         tabUrl: currentUrl,
         status: 'connecting',
-        initiator: params.initiator
+        initiator: p.initiator
       };
       requests.push(wsRequest);
       return;
     }
 
     if (method === 'Network.webSocketHandshakeResponseReceived') {
-      const wsIndex = requests.findIndex((r) => r.requestId === params.requestId);
+      const wsIndex = requests.findIndex((r) => r.requestId === p.requestId);
       if (wsIndex !== -1) {
         requests[wsIndex] = {
           ...requests[wsIndex],
           status: 'connected',
-          responseStatus: params.response.status,
-          responseHeaders: MaskingUtils.maskHeaders(params.response.headers, this.appConfig),
-          responseTimestamp: params.timestamp
+          responseStatus: p.response!.status,
+          responseHeaders: MaskingUtils.maskHeaders(p.response!.headers, this.appConfig),
+          responseTimestamp: p.timestamp
         };
       }
       return;
     }
 
     if (method === 'Network.webSocketClosed') {
-      const wsIndex = requests.findIndex((r) => r.requestId === params.requestId);
+      const wsIndex = requests.findIndex((r) => r.requestId === p.requestId);
       if (wsIndex !== -1) {
         requests[wsIndex] = {
           ...requests[wsIndex],
           status: 'closed',
-          closedTimestamp: params.timestamp
+          closedTimestamp: p.timestamp
         };
       }
       return;
     }
 
     // Handle regular XHR/Fetch requests
-    if (params.type !== 'XHR' && params.type !== 'Fetch') return;
+    if (p.type !== 'XHR' && p.type !== 'Fetch') return;
 
     // Type Filter
-    if (this.appConfig.typeFilter && !this.appConfig.typeFilter.includes(params.type)) return;
+    if (this.appConfig.typeFilter && !this.appConfig.typeFilter.includes(p.type!)) return;
 
     // Method Filter
-    const reqMethod = params.request?.method?.toUpperCase();
+    const reqMethod = p.request?.method?.toUpperCase();
     if (
       reqMethod &&
       this.appConfig.methodFilter &&
@@ -619,13 +650,13 @@ class NetworkMonitor {
     switch (method) {
       case 'Network.requestWillBeSent': {
         const request = {
-          requestId: params.requestId,
-          url: params.request.url,
-          method: params.request.method,
-          headers: MaskingUtils.maskHeaders(params.request.headers, this.appConfig),
-          postData: MaskingUtils.maskPayload(params.request.postData, this.appConfig), // Initial postData if available
-          timestamp: params.timestamp,
-          type: params.type,
+          requestId: p.requestId!,
+          url: p.request!.url,
+          method: p.request!.method,
+          headers: MaskingUtils.maskHeaders(p.request!.headers, this.appConfig),
+          postData: MaskingUtils.maskPayload(p.request!.postData, this.appConfig), // Initial postData if available
+          timestamp: p.timestamp,
+          type: p.type,
           tabUrl: currentUrl,
           status: 'pending'
         };
@@ -637,13 +668,13 @@ class NetworkMonitor {
         ) {
           // Defer the fetch slightly to allow the request to be fully formed
           setTimeout(() => {
-            this.getPostData(tabId, params.requestId)
+            this.getPostData(tabId, p.requestId!)
               .then((postData) => {
                 if (postData && postData.text) {
-                  const reqIndex = requests.findIndex((r) => r.requestId === params.requestId);
+                  const reqIndex = requests.findIndex((r) => r.requestId === p.requestId);
                   if (reqIndex !== -1) {
                     requests[reqIndex].postData = {
-                      text: MaskingUtils.maskPayload(postData.text, this.appConfig)
+                      text: MaskingUtils.maskPayload(postData.text, this.appConfig) ?? undefined
                     };
                     requests[reqIndex].postDataFetched = true;
                   }
@@ -660,13 +691,13 @@ class NetworkMonitor {
       }
 
       case 'Network.requestWillBeSentExtraInfo': {
-        const extraIndex = requests.findIndex((r) => r.requestId === params.requestId);
+        const extraIndex = requests.findIndex((r) => r.requestId === p.requestId);
         if (extraIndex !== -1) {
           const request = requests[extraIndex];
-          // Try to use params.headers if available (update headers)
-          if (params.headers) {
+          // Try to use p.headers if available (update headers)
+          if (p.headers) {
             request.headers = MaskingUtils.maskHeaders(
-              { ...request.headers, ...params.headers },
+              { ...request.headers, ...p.headers },
               this.appConfig
             );
           }
@@ -674,13 +705,14 @@ class NetworkMonitor {
           // Handle postData for POST/PUT/PATCH requests
           if (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH') {
             // If postData not already captured, try to fetch it
-            if (!request.postData || !request.postData.text) {
+            const pd = request.postData;
+            if (!pd || (typeof pd !== 'string' && !pd.text)) {
               // Use async function to fetch postData
-              this.getPostData(tabId, params.requestId)
+              this.getPostData(tabId, p.requestId!)
                 .then((postData) => {
                   if (postData && postData.text) {
                     request.postData = {
-                      text: MaskingUtils.maskPayload(postData.text, this.appConfig)
+                      text: MaskingUtils.maskPayload(postData.text, this.appConfig) ?? undefined
                     };
                     // Mark that postData has been fetched
                     request.postDataFetched = true;
@@ -695,16 +727,16 @@ class NetworkMonitor {
         break;
       }
       case 'Network.responseReceived': {
-        const reqIndex = requests.findIndex((r) => r.requestId === params.requestId);
+        const reqIndex = requests.findIndex((r) => r.requestId === p.requestId);
         if (reqIndex !== -1) {
           const req = requests[reqIndex];
           requests[reqIndex] = {
             ...req,
             status: 'completed',
-            responseStatus: params.response.status,
-            responseHeaders: MaskingUtils.maskHeaders(params.response.headers, this.appConfig),
-            mimeType: params.response.mimeType,
-            responseTimestamp: params.timestamp
+            responseStatus: p.response!.status,
+            responseHeaders: MaskingUtils.maskHeaders(p.response!.headers, this.appConfig),
+            mimeType: p.response!.mimeType,
+            responseTimestamp: p.timestamp
           };
 
           // Last chance to get postData if not already fetched
@@ -713,11 +745,11 @@ class NetworkMonitor {
             !req.postData &&
             !req.postDataFetched
           ) {
-            this.getPostData(tabId, params.requestId)
+            this.getPostData(tabId, p.requestId!)
               .then((postData) => {
                 if (postData && postData.text) {
                   requests[reqIndex].postData = {
-                    text: MaskingUtils.maskPayload(postData.text, this.appConfig)
+                    text: MaskingUtils.maskPayload(postData.text, this.appConfig) ?? undefined
                   };
                   requests[reqIndex].postDataFetched = true;
                 }
@@ -730,13 +762,13 @@ class NetworkMonitor {
         break;
       }
       case 'Network.loadingFailed': {
-        const failedReqIndex = requests.findIndex((r) => r.requestId === params.requestId);
+        const failedReqIndex = requests.findIndex((r) => r.requestId === p.requestId);
         if (failedReqIndex !== -1) {
           requests[failedReqIndex] = {
             ...requests[failedReqIndex],
             status: 'failed',
-            errorText: params.errorText,
-            failedTimestamp: params.timestamp
+            errorText: p.errorText,
+            failedTimestamp: p.timestamp
           };
         }
         break;

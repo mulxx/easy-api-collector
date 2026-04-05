@@ -1,9 +1,14 @@
+export type PostDataBody =
+  | string
+  | { text?: string; params?: Array<{ name: string; value: string }> }
+  | null;
+
 export interface NetworkRequest {
   requestId: string;
   url: string;
   method: string;
   headers?: Record<string, string>;
-  postData?: unknown; // Or { text?: string } | string
+  postData?: PostDataBody;
   postDataFetched?: boolean;
   timestamp?: number;
   type?: string;
@@ -29,9 +34,9 @@ export interface PathData {
 export interface PageData {
   page: string;
   fullUrl: string;
-  validXHRPaths: Map<string, PathData>;
-  unknownXHRPaths: Set<string>;
-  webSocketPaths: Set<string>;
+  validXHRPaths: PathData[];
+  unknownXHRPaths: string[];
+  webSocketPaths: string[];
 }
 
 export interface TabData {
