@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Monitor</title>
+    <style>
+        body {
+            width: 270px;
+            min-height: 270px;
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #051464 10%, #cccfde 90%);
+            color: white;
+        }
+
+        .container {
+            /* Darker semi-transparent backdrop for better contrast */
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 10px;
+            margin-bottom: 10px;
+            /* Darker status background */
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: background 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .status:hover {
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .status-text {
+            font-weight: 600;
+            font-size: 16px;
+            /* Ensure clear white text */
+            color: #f1f1f1;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 28px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.3);
+            transition: .4s;
+            border-radius: 28px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: #4CAF50;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(22px);
+        }
+
+        .button {
+            /* Neutral dark button background */
+            background: rgba(0, 0, 0, 0.5);
+            color: #ffffff;
+            width: 100%;
+            padding: 8px;
+            margin: 6px 0;
+            border: none;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }
+
+        .button:hover {
+            /* Slightly lighter on hover */
+            background: rgba(0, 0, 0, 0.7);
+            transform: translateY(-2px);
+        }
+
+        .button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .button.primary {
+            /* Stronger primary gradient */
+            background: linear-gradient(45deg, #e63946, #f77f00);
+            color: #ffffff;
+        }
+
+        .button.secondary {
+            /* Cooler secondary gradient */
+            background: linear-gradient(45deg, #457b9d, #1d3557);
+            color: #ffffff;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Easy API Collector</h1>
+            <p>Monitor and analyze network requests</p>
+        </div>
+
+        <div class="status">
+            <span class="status-text" id="statusText">Monitoring: OFF</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="toggleMonitoring">
+                <span class="slider"></span>
+            </label>
+        </div>
+
+        <button class="button secondary" id="analyzeAndDownloadBtn">Analyze & Download JSON</button>
+        <button class="button primary" id="clearRequests">Clear Data</button>
+
+        <script src="popup.js"></script>
+    </div>
+</body>
+
+</html>
