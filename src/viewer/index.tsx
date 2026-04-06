@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactECharts from 'echarts-for-react';
+import { Locale, LOCALES, getMessages } from '../i18n';
 import "./index.scss";
 
 // Using similar types to the panel
@@ -11,23 +12,49 @@ interface NetworkRequest {
   status: string;
   type?: string;
   responseStatus?: number;
+  pageUrl?: string;
   postData?: string | object;
+}
+
+interface PathData {
+  path: string;
+  method: string;
+  payload: string;
 }
 
 interface PageData {
   page: string;
   fullUrl: string;
-  validXHRPaths: Record<string, string[]>;
+  validXHRPaths: PathData[];
   unknownXHRPaths: string[];
   webSocketPaths: string[];
 }
 
 function Viewer() {
+  // background sends pageGroupedRequests as PageData[] (array).
+  // We convert it to Record<string, PageData> keyed by page name for easy lookup.
   const [data, setData] = useState<{ requests: Record<string, NetworkRequest[]>, pageGroupedRequests: Record<string, PageData> }>({
     requests: {},
     pageGroupedRequests: {}
   });
   const [activePage, setActivePage] = useState<string | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => (localStorage.getItem('eac-theme') as 'light' | 'dark') || 'light'
+  );
+  const [locale, setLocale] = useState<Locale>(
+    () => (localStorage.getItem('eac-locale') as Locale) || 'en'
+  );
+
+  const t = useMemo(() => getMessages(locale), [locale]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('eac-theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('eac-locale', locale);
+  }, [locale]);
 
   const fetchData = () => {
     try {
@@ -37,28 +64,32 @@ function Viewer() {
           if (chrome.runtime.lastError) return;
 
           if (response) {
+            // Convert PageData[] → Record<string, PageData> keyed by page name
+            const pgrArray: PageData[] = response.pageGroupedRequests || [];
+            const pgrMap: Record<string, PageData> = {};
+            pgrArray.forEach(p => { pgrMap[p.page] = p; });
+
             setData({
               requests: response.requests || {},
-              pageGroupedRequests: response.pageGroupedRequests || {}
+              pageGroupedRequests: pgrMap
             });
           }
-        } catch (err) {
+        } catch (_err) {
           // Ignore context invalidation in callback
         }
       });
-    } catch (e) {
+    } catch (_e) {
       // Ignore context invalidation directly
     }
   };
 
+  // Fetch once on mount — no polling; user triggers updates via the Refresh button
   useEffect(() => {
     fetchData();
-    const timer = setInterval(fetchData, 3000);
-    return () => clearInterval(timer);
   }, []);
 
   const pageNames = useMemo(() => Object.keys(data.pageGroupedRequests), [data.pageGroupedRequests]);
-  
+
   // Set default active page if empty
   useEffect(() => {
     if (!activePage && pageNames.length > 0) {
@@ -66,16 +97,14 @@ function Viewer() {
     }
   }, [pageNames, activePage]);
 
-  // Aggregate requests for the active page
+  // Aggregate raw requests belonging to the active page by matching pageUrl === fullUrl
   const activeRequests = useMemo(() => {
     if (!activePage) return [];
-    // The background doesn't strictly link pages to the raw array easily unless we match URLs or just show all for the tab
-    // Let's fallback to combining everything for a rough overview, or trying to filter by activePage string matching tabUrls
-    // For simplicity of a viewer user, if page string exists, maybe we just show all requests the background stored. 
-    // In `getRequests` background aggregates ALL requests across ALL tabs into `requestsForPopup[tabId]`. 
-    const all = Object.values(data.requests).flat();
-    return all.filter(r => (r as Record<string, unknown>).pageUrl && ((r as Record<string, unknown>).pageUrl.includes(activePage) || activePage.includes((r as Record<string, unknown>).pageUrl)));
-  }, [activePage, data.requests]);
+    const pageData = data.pageGroupedRequests[activePage];
+    if (!pageData) return [];
+    const all = Object.values(data.requests).flat() as NetworkRequest[];
+    return all.filter(r => r.pageUrl === pageData.fullUrl);
+  }, [activePage, data]);
 
   const methodDistribution = useMemo(() => {
     const counts: Record<string, number> = { GET: 0, POST: 0, OTHER: 0 };
@@ -85,7 +114,8 @@ function Viewer() {
       else counts.OTHER++;
     });
     return {
-      title: { text: "HTTP 方法比重", left: 'center', textStyle: { fontSize: 14 } },
+      backgroundColor: 'transparent',
+      title: { text: t.httpMethod, left: 'center', textStyle: { fontSize: 14 } },
       tooltip: { trigger: 'item' },
       series: [{
         type: 'pie',
@@ -94,41 +124,55 @@ function Viewer() {
         itemStyle: { borderRadius: 5, borderColor: '#fff', borderWidth: 2 }
       }]
     };
-  }, [activeRequests]);
+  }, [activeRequests, t]);
 
   const typeDistribution = useMemo(() => {
     const types: Record<string, number> = {};
     activeRequests.forEach(req => {
-      const t = req.type || 'Other';
-      types[t] = (types[t] || 0) + 1;
+      const key = req.type || 'Other';
+      types[key] = (types[key] || 0) + 1;
     });
     return {
-      title: { text: "资源拦截类别", left: 'center', textStyle: { fontSize: 14 } },
+      backgroundColor: 'transparent',
+      title: { text: t.resourceType, left: 'center', textStyle: { fontSize: 14 } },
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       xAxis: { type: 'value' },
       yAxis: { type: 'category', data: Object.keys(types) },
       series: [{ type: 'bar', data: Object.values(types), itemStyle: { color: '#73c0de' } }]
     };
-  }, [activeRequests]);
+  }, [activeRequests, t]);
 
   return (
     <div className="viewer-app">
       <div className="header">
-        <h1>Easy API Collector 实时大屏雷达</h1>
+        <h1>{t.dashboardTitle}</h1>
         <div className="controls">
-          <button className="btn" onClick={fetchData}>手动刷新</button>
-          <button className="btn" onClick={() => window.close()}>关闭</button>
+          <button
+            className="btn"
+            onClick={() => setTheme(p => p === 'light' ? 'dark' : 'light')}
+          >
+            {theme === 'dark' ? t.lightMode : t.darkMode}
+          </button>
+          <select
+            className="locale-select"
+            value={locale}
+            onChange={e => setLocale(e.target.value as Locale)}
+          >
+            {LOCALES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+          </select>
+          <button className="btn" onClick={fetchData}>{t.refresh}</button>
+          <button className="btn" onClick={() => window.close()}>{t.close}</button>
         </div>
       </div>
 
       <div className="main-content">
         <aside className="sidebar">
-          <h3 className="sidebar-title">抓包来源页面 (Pages)</h3>
+          <h3 className="sidebar-title">{t.pages}</h3>
           <ul className="site-list">
-            {pageNames.length === 0 ? <li className="site-item" style={{ color: '#ccc' }}>暂无数据</li> : null}
+            {pageNames.length === 0 ? <li className="site-item" style={{ color: 'var(--text-muted)' }}>{t.noData}</li> : null}
             {pageNames.map(page => (
-              <li 
-                key={page} 
+              <li
+                key={page}
                 className={`site-item ${activePage === page ? 'active' : ''}`}
                 onClick={() => setActivePage(page)}
               >
@@ -140,25 +184,25 @@ function Viewer() {
 
         <section className="dashboard">
           {!activePage ? (
-            <div className="empty-state">请先在左侧选择一个捕获的页面来源</div>
+            <div className="empty-state">{t.selectPage}</div>
           ) : (
             <>
               <div className="charts-grid">
                 <div className="chart-card">
-                  <ReactECharts option={methodDistribution} style={{ height: '100%' }} />
+                  <ReactECharts key={theme} theme={theme} option={methodDistribution} style={{ height: '100%' }} />
                 </div>
                 <div className="chart-card">
-                  <ReactECharts option={typeDistribution} style={{ height: '100%' }} />
+                  <ReactECharts key={theme} theme={theme} option={typeDistribution} style={{ height: '100%' }} />
                 </div>
               </div>
               <div className="data-table-wrapper">
-                <h3>已捕获端点 API ({activeRequests.length} 条)</h3>
+                <h3>{t.capturedApis} ({activeRequests.length})</h3>
                 <table>
                   <thead>
                     <tr>
-                      <th style={{ width: '80px' }}>Method</th>
-                      <th style={{ width: '80px' }}>Status</th>
-                      <th>URL</th>
+                      <th style={{ width: '80px' }}>{t.method}</th>
+                      <th style={{ width: '80px' }}>{t.status}</th>
+                      <th>{t.url}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -174,7 +218,7 @@ function Viewer() {
                       </tr>
                     ))}
                     {activeRequests.length === 0 && (
-                      <tr><td colSpan={3} style={{ textAlign: 'center', padding: '40px', color: '#999' }}>在该网页下暂未命中过滤规则的数据</td></tr>
+                      <tr><td colSpan={3} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>{t.noRequests}</td></tr>
                     )}
                   </tbody>
                 </table>

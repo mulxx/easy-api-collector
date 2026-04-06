@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactECharts from 'echarts-for-react';
+import { Locale, LOCALES, getMessages } from '../i18n';
 import "./index.scss";
 
 // Ensure the NetworkRequest type mimics what we export in background.
@@ -17,37 +18,50 @@ interface NetworkRequest {
 
 function Panel() {
   const [requests, setRequests] = useState<NetworkRequest[]>([]);
-  
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => (localStorage.getItem('eac-theme') as 'light' | 'dark') || 'light'
+  );
+  const [locale, setLocale] = useState<Locale>(
+    () => (localStorage.getItem('eac-locale') as Locale) || 'en'
+  );
+
+  const t = useMemo(() => getMessages(locale), [locale]);
+
   useEffect(() => {
-    // In actual devtools, this gets the tabId of the current inspected window:
-    const tabId = chrome.devtools?.inspectedWindow?.tabId?.toString() || "";
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('eac-theme', theme);
+  }, [theme]);
 
-    const fetchRequests = () => {
-      try {
-        if (!chrome?.runtime?.id) return;
-        chrome.runtime.sendMessage({ action: "getRequests" }, (response) => {
-          try {
-            if (chrome.runtime.lastError) return;
+  useEffect(() => {
+    localStorage.setItem('eac-locale', locale);
+  }, [locale]);
 
-            if (response && response.requests) {
-              // If we run outside the panel context, maybe fallback to all requests for debugging.
-              const tabData = response.requests[tabId] || Object.values(response.requests).flat() || [];
-              setRequests(tabData as NetworkRequest[]);
-            }
-          } catch (err) {
-            // Ignore context invalidation in callback
+  // Stable tab id for the lifetime of the devtools panel
+  const tabId = useMemo(() => chrome.devtools?.inspectedWindow?.tabId?.toString() || "", []);
+
+  const fetchRequests = useCallback(() => {
+    if (!chrome?.runtime?.id) return;
+    try {
+      chrome.runtime.sendMessage({ action: "getRequests" }, (response) => {
+        try {
+          if (chrome.runtime.lastError) return;
+          if (response && response.requests) {
+            const tabData = response.requests[tabId] || Object.values(response.requests).flat() || [];
+            setRequests(tabData as NetworkRequest[]);
           }
-        });
-      } catch (e) {
-        // Ignore context invalidation directly
-      }
-    };
+        } catch (_err) {
+          // Ignore context invalidation in callback
+        }
+      });
+    } catch (_e) {
+      // Context invalidated
+    }
+  }, [tabId]);
 
-
+  // Fetch once on mount — no polling; user triggers updates via the Refresh button
+  useEffect(() => {
     fetchRequests();
-    const interval = setInterval(fetchRequests, 2000); // Polling for updates
-    return () => clearInterval(interval);
-  }, []);
+  }, [fetchRequests]);
 
   // ECharts Pie Chart for Status
   const pieOption = useMemo(() => {
@@ -56,9 +70,10 @@ function Panel() {
       const code = req.responseStatus ? String(req.responseStatus) : (req.status === 'failed' ? 'Failed' : 'Pending');
       statusCounts[code] = (statusCounts[code] || 0) + 1;
     });
-    
+
     return {
-      title: { text: 'Status Code Distribution', left: 'center', textStyle: { fontSize: 14 } },
+      backgroundColor: 'transparent',
+      title: { text: t.statusDist, left: 'center', textStyle: { fontSize: 14 } },
       tooltip: { trigger: 'item' },
       series: [
         {
@@ -70,7 +85,7 @@ function Panel() {
         }
       ]
     };
-  }, [requests]);
+  }, [requests, t]);
 
   // ECharts Bar Chart for Request Types
   const barOption = useMemo(() => {
@@ -81,31 +96,37 @@ function Panel() {
     });
 
     return {
-      title: { text: 'Resource Types', left: 'center', textStyle: { fontSize: 14 } },
+      backgroundColor: 'transparent',
+      title: { text: t.resourceTypes, left: 'center', textStyle: { fontSize: 14 } },
       tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
       xAxis: { type: 'category', data: Object.keys(typeCounts) },
       yAxis: { type: 'value' },
       series: [{ data: Object.values(typeCounts), type: 'bar', itemStyle: { color: '#5470c6' } }]
     };
-  }, [requests]);
+  }, [requests, t]);
 
   // Duration scatter plot
   const scatterOption = useMemo(() => {
     const data = requests
       .filter(req => req.timestamp && req.responseTimestamp)
       .map(req => [
-        new Date(req.timestamp! * 1000).toLocaleTimeString(), 
+        new Date(req.timestamp! * 1000).toLocaleTimeString(),
         ((req.responseTimestamp! - req.timestamp!) * 1000).toFixed(0)
       ]);
 
     return {
-      title: { text: 'Request Latency (ms)', left: 'center', textStyle: { fontSize: 14 } },
-      tooltip: { trigger: 'item', formatter: 'Time: {c0}<br/>Latency: {c1} ms' },
+      backgroundColor: 'transparent',
+      title: { text: t.latency, left: 'center', textStyle: { fontSize: 14 } },
+      tooltip: {
+        trigger: 'item',
+        formatter: (params: { value: [string, string] }) =>
+          `${t.latencyTime}: ${params.value[0]}<br/>${t.latencyMs}: ${params.value[1]} ms`
+      },
       xAxis: { type: 'category' },
       yAxis: { type: 'value', axisLabel: { formatter: '{value} ms' } },
       series: [{ symbolSize: 10, data, type: 'scatter', itemStyle: { color: '#91cc75' } }]
     };
-  }, [requests]);
+  }, [requests, t]);
 
   const getStatusBadge = (req: NetworkRequest) => {
     if (req.status === 'failed') return <span className="status-badge error">Failed</span>;
@@ -115,21 +136,38 @@ function Panel() {
 
   return (
     <div className="panel-container">
+      <div className="toolbar">
+        <button className="toolbar-btn" onClick={fetchRequests}>{t.refresh}</button>
+        <button
+          className="toolbar-btn"
+          onClick={() => setTheme(p => p === 'light' ? 'dark' : 'light')}
+        >
+          {theme === 'dark' ? t.lightMode : t.darkMode}
+        </button>
+        <select
+          className="locale-select"
+          value={locale}
+          onChange={e => setLocale(e.target.value as Locale)}
+        >
+          {LOCALES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+        </select>
+      </div>
+
       <div className="charts-row">
-        <div className="chart-card"><ReactECharts option={pieOption} style={{ height: '100%' }} /></div>
-        <div className="chart-card"><ReactECharts option={barOption} style={{ height: '100%' }} /></div>
-        <div className="chart-card"><ReactECharts option={scatterOption} style={{ height: '100%' }} /></div>
+        <div className="chart-card"><ReactECharts key={theme} theme={theme} option={pieOption} style={{ height: '100%' }} /></div>
+        <div className="chart-card"><ReactECharts key={theme} theme={theme} option={barOption} style={{ height: '100%' }} /></div>
+        <div className="chart-card"><ReactECharts key={theme} theme={theme} option={scatterOption} style={{ height: '100%' }} /></div>
       </div>
 
       <div className="table-card">
-        <h3>Captured Network Requests ({requests.length})</h3>
+        <h3>{t.capturedRequests} ({requests.length})</h3>
         <table className="requests-table">
           <thead>
             <tr>
-              <th>Method</th>
-              <th>Status</th>
-              <th>Type</th>
-              <th>URL</th>
+              <th>{t.method}</th>
+              <th>{t.status}</th>
+              <th>{t.type}</th>
+              <th>{t.url}</th>
             </tr>
           </thead>
           <tbody>
@@ -144,7 +182,7 @@ function Panel() {
               </tr>
             ))}
             {requests.length === 0 && (
-              <tr><td colSpan={4} style={{ textAlign: 'center', color: '#999' }}>No requests captured yet.</td></tr>
+              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>{t.noRequestsYet}</td></tr>
             )}
           </tbody>
         </table>

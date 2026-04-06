@@ -1,190 +1,278 @@
 <div align="center">
   <h1>🚀 Easy API Collector</h1>
-  <p>A powerful and easy-to-use Chrome extension for API packet capture and real-time analysis / 一个强大且易用的 Chrome 浏览器 API 抓包与实时分析插件</p>
+  <p>A powerful Chrome extension for real-time API packet capture, analysis, and export<br/>强大的 Chrome 浏览器 API 抓包、分析与导出工具</p>
   <p>
-    <a href="#english">English</a> | <a href="#简体中文">简体中文</a>
+    <img src="https://img.shields.io/badge/Manifest-V3-blue" />
+    <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react" />
+    <img src="https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript" />
+    <img src="https://img.shields.io/badge/Vite-5-646CFF?logo=vite" />
+    <img src="https://img.shields.io/badge/ECharts-6-AA344D" />
+  </p>
+  <p>
+    <a href="#english">English</a> · <a href="#简体中文">简体中文</a>
   </p>
 </div>
-
-<br />
 
 ---
 
 <h2 id="english">English</h2>
 
-**Easy API Collector** is a developer and tester assistant tool built on the core capabilities of Chrome extensions. It provides real-time network request monitoring, regular expression filtering, sensitive field desensitization, and a visual dashboard driven by ECharts. Whether you are a developer troubleshooting frontend issues or a tester needing to export API data, it provides immense convenience.
-
-### ✨ Core Features
-
-- 🔍 **Comprehensive Real-time Capture**: Seamlessly monitors and captures all network requests (XHR, Fetch, Script, Image, etc.).
-- 🎨 **Multi-dimensional Visual Dashboard**:
-  - **DevTools Advanced Panel**: Features an exclusive Tab in the F12 Developer Tools, supporting in-depth analysis such as status code distribution, resource categories, and response latency scatter plots.
-  - **Viewer Standalone Dashboard**: Provides a real-time request monitoring dashboard and charts for regular users or non-developers.
-- ⚙️ **Flexible Rule Engine**: Supports filtering by HTTP Method, request type, and powerful regular expressions to precisely target the APIs you need to capture.
-- 🔒 **Privacy & Masking Protection**: Built-in Keys masking feature. Once enabled, it automatically replaces sensitive Headers or fields like Authorization and Token to prevent data leaks.
-- ⚡ **Modern Tech Stack**: Built with React 18 + Vite v5 + ECharts + SCSS, offering rapid hot module replacement and excellent performance.
+**Easy API Collector** is a Chrome Extension (Manifest V3) built for developers and testers. It uses the **Chrome Debugger API** (CDP) to intercept all network traffic in real time, then surfaces the captured data through three integrated interfaces: a DevTools panel, a full-page realtime dashboard, and a filterable options UI — all with **dark / light theme switching** and **10-language i18n support**.
 
 ---
 
-### 📦 Installation and Local Usage Guide (For Regular Users)
+### ✨ Features
 
-To easily use this tool without any development experience, follow these simple steps:
-
-1. **Get the Source Code / Build Package**:
-   - Download the latest build ZIP file (e.g., `easy-api-collector-dist.zip`) from the [Releases page](#) on GitHub, or clone this repository and run `npm run build` locally to generate the `dist` directory.
-2. **Open Extension Management**:
-   - Open your Chrome browser, type `chrome://extensions/` in the address bar, and press Enter.
-3. **Enable Developer Mode**:
-   - Find and **turn on the "Developer mode"** toggle in the top right corner of the page.
-4. **Load the Extension**:
-   - Click the **"Load unpacked"** button in the top left corner.
-   - Select the folder you just downloaded and extracted (Note: It must be the directory containing `manifest.json`, usually the `dist/` directory).
-5. **Start Using**:
-   - Once installed successfully, you can pin Easy API Collector to your browser's extension bar.
-   - Open the F12 Developer Tools on any web page and locate the `Easy API Collector` panel; or click the extension icon to open the standalone Viewer dashboard.
-
----
-
-### ⚠️ Developer Mode Pop-up Disclaimer & Prompts
-
-Since this extension currently needs to be loaded locally via **Developer Mode**, the Chrome browser may occasionally (e.g., upon browser restart) prompt a safety warning: **"Disable developer mode extensions"**.
-
-- **This is Normal**: Chrome uses this pop-up to casually prevent malicious scripts from lurking in developer mode without the user's knowledge.
-- **Disclaimer**: This extension is entirely open-source, and all code and request data processing happen **locally in your browser**. **It will NOT report or collect any of your private data to any third-party servers**.
-- **Action Prompt**: When you see this pop-up, simply click the **"✖️ (Close)"** button in the top right corner or select **"Cancel"** to keep the extension running. Do not click disable.
+| Category            | Details                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Capture**         | Intercepts XHR, Fetch, WebSocket, Script, Image and all other CDP network event types via `chrome.debugger`                                |
+| **Rule Engine**     | Filter by HTTP method, request type, and arbitrary URL regex; rules take effect immediately across all capture surfaces                    |
+| **Privacy Masking** | Field-level key masking — any Header or JSON body key matching the configured list is replaced with `***MASKED***` at capture time         |
+| **HAR Export**      | One-click export of all captured requests in standard HAR 1.2 format for import into Postman, Charles, etc.                                |
+| **JSON Analysis**   | Structured analysis export grouping API paths by originating page with method and payload summaries                                        |
+| **DevTools Panel**  | Dedicated tab in Chrome DevTools (F12) with three ECharts: status code distribution (pie), resource type (bar), latency scatter            |
+| **Realtime Viewer** | Full-page standalone dashboard opened via the popup; shows per-page method distribution and resource type charts plus a full request table |
+| **Options Page**    | Persistent configuration via `chrome.storage` — method/type allow-list, URL regex filter, masking key management                           |
+| **Theme**           | Dark / Light mode toggle, persisted in `localStorage` across all three pages (`eac-theme`)                                                 |
+| **i18n**            | 10 languages: English · 中文 · 日本語 · 한국어 · Español · Português · Français · Deutsch · Italiano · Русский                             |
+| **Manual Refresh**  | Dashboards fetch data only on initial load and on user-triggered Refresh — no auto-polling that could cause phantom data clears            |
 
 ---
 
-### 🛠️ Local Development & Contribution
+### 🏗️ Architecture
 
-We welcome developers to join this open-source project, submit Issues, or Pull Requests! Here is the local development guide:
+```
+easy-api-collector/
+├── manifest.json              # MV3 manifest — debugger, activeTab, storage, tabs
+├── background.ts              # Service Worker — NetworkMonitor class, chrome.debugger CDP
+├── popup.html / popup.ts      # Extension popup — toggle monitoring, download, open Viewer
+├── devtools.html              # DevTools entry page (registers the panel)
+├── panel.html                 # DevTools panel host page
+├── viewer.html                # Standalone realtime dashboard host page
+├── options.html               # Options page host page
+│
+├── src/
+│   ├── i18n.ts                # 10-locale Messages interface + getMessages() + LOCALES[]
+│   ├── devtools/              # DevTools panel registration script
+│   ├── panel/
+│   │   ├── index.tsx          # React app — status/type/latency charts, request table
+│   │   └── index.scss         # CSS custom properties (light/dark theming)
+│   ├── viewer/
+│   │   ├── index.tsx          # React app — per-page method & type charts, request table
+│   │   └── index.scss         # CSS custom properties (light/dark theming)
+│   └── options/
+│       ├── index.tsx          # React app — method/type filter, URL regex, masking keys
+│       └── index.scss         # CSS custom properties (light/dark theming)
+│
+├── types/index.ts             # Shared TypeScript interfaces (NetworkRequest, PageData, …)
+├── utils/
+│   ├── StorageService.ts      # chrome.storage abstraction + AppConfig + DEFAULT_CONFIG
+│   ├── MaskingUtils.ts        # Field-level masking for headers and JSON bodies
+│   └── HarExporter.ts        # HAR 1.2 export from NetworkRequest[]
+│
+└── vite.config.ts             # @crxjs/vite-plugin + react; multi-entry build
+```
 
-#### 1. Environment Preparation
+**Data flow:**
 
-Ensure you have [Node.js](https://nodejs.org/) (v18+ recommended) installed in your local environment.
+1. `popup.ts` sends `toggleMonitoring` → `background.ts` calls `chrome.debugger.attach`
+2. Background listens to CDP events (`Network.requestWillBeSent`, `Network.responseReceived`, etc.), applies config filters and masking, saves state to `chrome.storage.local`
+3. Panel / Viewer send `getRequests` → background serializes `Map`→plain object and responds
+4. Dashboards render on first load and when the user clicks **Refresh** — no polling interval
 
-#### 2. Clone the Project & Install Dependencies
+---
+
+### 📦 Installation
+
+#### Option A — Load the pre-built `dist/` (no Node.js required)
+
+1. Download or clone this repository
+2. Run `npm install && npm run build` to produce the `dist/` folder  
+   _(or download a release ZIP if available)_
+3. Open `chrome://extensions/` in Chrome
+4. Enable **Developer mode** (top-right toggle)
+5. Click **Load unpacked** → select the `dist/` folder
+6. Pin the extension to the toolbar
+
+#### Option B — Development mode (hot-reload)
 
 ```bash
 git clone https://github.com/your-username/easy-api-collector.git
 cd easy-api-collector
 npm install
+npm run dev          # Vite build --watch; dist/ is updated on every save
 ```
 
-#### 3. Start Locally (Hot Reload Development)
-
-```bash
-npm run dev
-```
-
-This command starts Vite's watch mode, enabling Hot Module Replacement (HMR) for Chrome extensions via `@crxjs/vite-plugin`.
-
-- The `dist` directory will be generated after startup.
-- Follow the [Installation Guide] above to load the `dist` directory into Chrome's Developer Mode.
-- After that, modifying code under `src/` will usually auto-reload the extension (if it fails to apply, click the 🔄 refresh button for the extension on the `chrome://extensions` page).
-
-#### 4. Production Build
-
-```bash
-npm run build
-```
-
-When submitting a PR or preparing a new release, make sure to use the build command to package the final compressed and optimized output.
+Load `dist/` into Chrome as above. After code changes, click the 🔄 refresh icon on `chrome://extensions` if the extension does not hot-reload automatically.
 
 ---
 
-<br />
+### 🚀 Usage
+
+1. **Navigate** to any web page you want to capture
+2. **Click** the Easy API Collector extension icon → toggle **Start Monitoring**
+3. **Browse** the target site — requests are captured in real time
+4. **Open DevTools** (F12) → go to the **Easy API Collector** tab for the panel view
+5. **Click "Open Dashboard"** in the popup for the full-page Viewer
+6. **Click "Analyze & Export JSON"** to download a structured API path summary
+7. **Click "Download HAR"** to export a HAR file importable in most HTTP tools
+8. **Click "Open Options"** (or via `chrome://extensions` → Details → Extension options) to configure filters and masking
+9. Use the **🌙 / ☀️** button and the **language selector** on any dashboard to switch theme / UI language — settings persist across all three pages via `localStorage`
+
+---
+
+### ⚙️ Options Reference
+
+| Setting           | Default                                                                   | Description                                                       |
+| ----------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Network Types** | XHR, Fetch, WebSocket                                                     | Transport types to capture                                        |
+| **HTTP Methods**  | All 7                                                                     | Methods to include in capture                                     |
+| **URL Filter**    | _(empty)_                                                                 | Regex applied to the full request URL; empty = capture all        |
+| **Masking**       | Enabled                                                                   | When on, values of matching keys are replaced with `***MASKED***` |
+| **Masking Keys**  | `authorization`, `cookie`, `token`, `password`, `secret`, `client_secret` | Case-insensitive key name list                                    |
+
+---
+
+### ⚠️ Developer Mode Notice
+
+Because this extension is loaded locally via Developer Mode, Chrome may occasionally show a banner: **"Disable developer mode extensions"**. This is a standard Chrome safety prompt and is **not** an indication of any problem with this extension.
+
+- All request processing happens **entirely in your local browser** — no data is sent to any external server
+- Click the **✖ (close)** button on the banner or **Cancel** to dismiss it; do **not** click "Disable"
+
+---
+
+### 🛠️ Tech Stack
+
+| Layer         | Technology                                                            |
+| ------------- | --------------------------------------------------------------------- |
+| Language      | TypeScript 6 (strict)                                                 |
+| UI Framework  | React 19 + React DOM                                                  |
+| Build Tool    | Vite 5 + `@crxjs/vite-plugin` 2                                       |
+| Charts        | ECharts 6 + `echarts-for-react` 3                                     |
+| Styling       | SCSS + CSS Custom Properties (theme tokens)                           |
+| Extension API | Chrome MV3 — `chrome.debugger` (CDP), `chrome.storage`, `chrome.tabs` |
+| Code Quality  | ESLint + Prettier + Husky + lint-staged                               |
+
+---
+
+### 📄 License
+
+This project is licensed under the [MIT License](./LICENSE).
+
+<br/>
+
+---
 
 <h2 id="简体中文">简体中文</h2>
 
-**Easy API Collector** 是一个基于 Chrome 扩展核心能力构建的开发者与测试人员辅助工具。它提供了实时的网络请求监听、正则过滤、敏感字段脱敏以及通过 ECharts 驱动的可视化大屏。无论你是排查前端问题的开发者，还是需要导出 API 数据的测试人员，它都能为你提供极大的便利。
-
-### ✨ 核心特性
-
-- 🔍 **全方位实时抓包**：无缝监听并捕获所有网络请求（XHR、Fetch、Script、Image等）。
-- 🎨 **多维可视化看板**：
-  - **DevTools 高级面板**：在 F12 开发者工具中拥有专属 Tab，支持状态码分布、资源类别、响应延迟散点图等深度分析。
-  - **Viewer 独立大屏**：提供给普通用户或非开发者使用的实时请求监控看板与图表。
-- ⚙️ **灵活的规则引擎**：支持按 HTTP Method、请求类型（Type）以及强大的正则表达式过滤，精准命中你需要捕获的接口。
-- 🔒 **隐私与脱敏防护**：内置 Keys 掩码脱敏功能，开启后可自动替换 Authorization、Token 等敏感 Header 或字段，防止数据泄露。
-- ⚡ **现代技术栈底座**：基于 React 18 + Vite v5 + ECharts + SCSS，热更新飞快，性能优异。
+**Easy API Collector** 是一个基于 Chrome 扩展（Manifest V3）的开发者与测试人员辅助工具。它通过 **Chrome Debugger API（CDP）** 实时拦截全部网络流量，并通过三个集成界面展示数据：DevTools 面板、全屏实时大屏和可配置的选项页，全部支持**深色/浅色主题切换**和 **10 语言国际化**。
 
 ---
 
-### 📦 安装与本地使用指南（适合普通用户）
+### ✨ 功能特性
 
-为了让没有任何开发经验的用户也能轻松使用，请遵循以下简单步骤：
-
-1. **获取源码/构建包**：
-   - 在 Github 的 [Releases 页面](#) 下载最新的构建产物压缩包（例如 `easy-api-collector-dist.zip`），或者直接克隆本仓库并在本地执行一次 `npm run build` 生成 `dist` 目录。
-2. **打开扩展管理**：
-   - 打开 Chrome 浏览器，在地址栏输入 `chrome://extensions/` 并回车。
-3. **开启开发者模式**：
-   - 在页面右上角，找到并**开启「开发者模式」**开关。
-4. **加载扩展程序**：
-   - 点击左上角的 **「加载已解压的扩展程序」**（Load unpacked）按钮。
-   - 选择你刚刚下载并解压的文件夹（注意：必须是包含 `manifest.json` 的那个目录，通常是 `dist/` 目录）。
-5. **开始使用**：
-   - 安装成功后，你可以在浏览器右上角插件栏固定 Easy API Collector。
-   - 在任意网页打开 F12 开发者工具，找到 `Easy API Collector` 面板；或者点击插件图标打开独立的大屏界面。
-
----
-
-### ⚠️ 开发者模式弹窗免责与操作提示
-
-由于本插件目前需要通过**开发者模式**在本地加载运行，Chrome 浏览器在某些情况下（如重启浏览器时）可能会弹出一个安全提示：**“请停用以开发者模式运行的扩展程序”**。
-
-- **这是正常现象**：Chrome 旨在通过此弹窗防止恶意恶意脚本在用户不知情的情况下以开发者模式潜伏。
-- **免责声明**：本插件完全开源，所有的代码与请求数据处理均在您的**浏览器本地**进行，**不会上报或收集任何您的隐私数据到任何第三方服务器**。
-- **操作提示**：遇到此弹窗时，为了保证插件继续运行，请放心点击右上角的 **「✖️（关闭）」** 或选择 **「取消」** 即可，不要点击“停用”。
+| 类别              | 说明                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| **抓包**          | 通过 `chrome.debugger` 拦截 XHR、Fetch、WebSocket、Script、Image 等所有 CDP 网络事件类型                    |
+| **规则引擎**      | 按 HTTP Method、请求类型、URL 正则过滤，规则立即生效                                                        |
+| **隐私脱敏**      | 字段级 Key 掩码——任何 Header 或 JSON 体中键名匹配配置列表的值，在抓包时自动替换为 `***MASKED***`            |
+| **HAR 导出**      | 一键导出标准 HAR 1.2 格式文件，可直接导入 Postman、Charles 等工具                                           |
+| **JSON 分析导出** | 按照抓包来源页面对 API 路径进行结构化分组，附带请求方法和 Payload 摘要                                      |
+| **DevTools 面板** | Chrome DevTools（F12）专属 Tab，含三个 ECharts 图表：状态码饼图、资源类型柱图、延迟散点图                   |
+| **实时大屏**      | 通过 Popup 打开的全屏独立看板，展示每个来源页面的方法分布、资源类型图表及完整请求列表                       |
+| **选项页**        | 通过 `chrome.storage` 持久化配置——方法/类型白名单、URL 正则过滤、脱敏 Key 管理                              |
+| **主题**          | 深色/浅色模式切换，通过 `localStorage`（`eac-theme`）在三个页面间共享持久化                                 |
+| **国际化**        | 10 种语言：English · 中文 · 日本語 · 한국어 · Español · Português · Français · Deutsch · Italiano · Русский |
+| **手动刷新**      | 看板仅在首次加载和用户点击 Refresh 时获取数据，无自动轮询，彻底避免 SW 重启导致的"数据清空再出现"问题       |
 
 ---
 
-### 🛠️ 本地开发与参与贡献
+### 🏗️ 项目架构
 
-我们非常欢迎开发者参与到这个开源项目中来，提交 Issue 或 Pull Request！以下是本地开发指南：
+```
+easy-api-collector/
+├── manifest.json              # MV3 Manifest — debugger, activeTab, storage, tabs
+├── background.ts              # Service Worker — NetworkMonitor 类，chrome.debugger CDP
+├── popup.html / popup.ts      # 扩展 Popup — 开关监听、下载、打开大屏
+├── devtools.html              # DevTools 入口页（注册面板）
+├── panel.html                 # DevTools 面板宿主页
+├── viewer.html                # 独立实时大屏宿主页
+├── options.html               # 选项页宿主页
+│
+├── src/
+│   ├── i18n.ts                # 10 语言 Messages 接口 + getMessages() + LOCALES[]
+│   ├── devtools/              # DevTools 面板注册脚本
+│   ├── panel/                 # DevTools 面板 React 应用
+│   ├── viewer/                # 实时大屏 React 应用
+│   └── options/               # 选项页 React 应用
+│
+├── types/index.ts             # 共享 TypeScript 类型（NetworkRequest、PageData 等）
+├── utils/
+│   ├── StorageService.ts      # chrome.storage 封装 + AppConfig + DEFAULT_CONFIG
+│   ├── MaskingUtils.ts        # Headers 和 JSON 体字段脱敏
+│   └── HarExporter.ts        # NetworkRequest[] → HAR 1.2 格式导出
+│
+└── vite.config.ts             # @crxjs/vite-plugin + react，多入口构建
+```
 
-#### 1. 环境准备
+**数据流：**
 
-确保你的本地环境已经安装了 [Node.js](https://nodejs.org/) (推荐 v18+)。
+1. `popup.ts` 发送 `toggleMonitoring` → `background.ts` 调用 `chrome.debugger.attach`
+2. Background 监听 CDP 事件，应用配置过滤和脱敏规则后将数据保存到 `chrome.storage.local`
+3. Panel / Viewer 发送 `getRequests` → Background 将 `Map` 序列化为普通对象并响应
+4. 看板在首次加载和用户手动点击 **刷新** 时更新数据，无定时轮询
 
-#### 2. 克隆项目与安装依赖
+---
+
+### 📦 安装与使用
+
+#### 方式 A — 加载已构建的 `dist/`（无需 Node.js）
+
+1. 下载或克隆本仓库
+2. 执行 `npm install && npm run build` 生成 `dist/` 目录
+3. 打开 `chrome://extensions/`，开启右上角**开发者模式**
+4. 点击**加载已解压的扩展程序** → 选择 `dist/` 目录
+5. 将扩展固定到浏览器工具栏
+
+#### 方式 B — 开发热更新模式
 
 ```bash
 git clone https://github.com/your-username/easy-api-collector.git
 cd easy-api-collector
 npm install
+npm run dev   # Vite build --watch，每次保存后自动更新 dist/
 ```
 
-#### 3. 本地启动（热更新开发）
-
-```bash
-npm run dev
-```
-
-此命令会启动 Vite 的 watch 模式，通过 `@crxjs/vite-plugin` 实现 Chrome 扩展的热更新。
-
-- 启动后会生成 `dist` 目录。
-- 按照上方【安装指南】将 `dist` 目录加载到 Chrome 的开发者模式中。
-- 此后你修改 `src/` 下的代码，插件大多支持自动热重载（如果不生效，可在 `chrome://extensions` 页面点击该扩展的 🔄 刷新按钮）。
-
-#### 4. 生产环境构建
-
-```bash
-npm run build
-```
-
-在提交 PR 或者准备发布新版本时，请确保使用 build 命令打包出最终压缩与优化的产物。
+按方式 A 加载 `dist/`。代码修改后如未自动热重载，在 `chrome://extensions` 页面手动点击 🔄 刷新。
 
 ---
 
-## 📄 License / 开源协议
+### 🚀 使用流程
 
-This project is licensed under the [MIT License](./LICENSE). / 本项目基于 [MIT License](./LICENSE) 开源。
+1. 打开目标网页
+2. 点击扩展图标 → 开启**开始监听**
+3. 浏览目标站点，请求实时被捕获
+4. 打开 F12 → 找到 **Easy API Collector** 面板查看 DevTools 看板
+5. 点击 Popup 中的 **"打开大屏"** 进入全屏 Viewer
+6. 点击 **"分析并导出 JSON"** 下载结构化 API 路径摘要
+7. 点击 **"下载 HAR"** 导出 HAR 文件
+8. 通过选项页配置过滤规则与脱敏 Key
+9. 任意看板右上角可切换 **🌙 / ☀️ 主题** 和 **语言** — 设置通过 `localStorage` 在三个页面间共享
 
-You are free to use, modify, and distribute this project's code, but please retain the original author's copyright notice. / 这意味着你可以自由地使用、修改和分发本项目的代码，但烦请保留原作者的版权声明信息。
+---
 
-<br />
+### ⚠️ 开发者模式弹窗说明
+
+由于需要以开发者模式本地加载，Chrome 可能偶尔弹出「请停用以开发者模式运行的扩展程序」提示。本扩展完全开源，所有数据处理均在**浏览器本地**进行，**不会上报任何数据到第三方服务器**。遇到弹窗请直接点击 **✖（关闭）**，不要点"停用"。
+
+---
+
+### 📄 开源协议
+
+本项目基于 [MIT License](./LICENSE) 开源，可自由使用、修改和分发，烦请保留原作者版权声明。
+
+<br/>
 
 <div align="center">
   <sub>Made with ❤️ by the Easy API Collector Contributors</sub>

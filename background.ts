@@ -8,7 +8,6 @@ interface InternalPageData {
   page: string;
   fullUrl: string;
   validXHRPaths: Map<string, NetworkRequest[]>;
-  unknownXHRPaths: Set<string>;
   webSocketPaths: Set<string>;
 }
 
@@ -74,6 +73,31 @@ class NetworkMonitor {
             pageRequests: new Map(Object.entries(tabData.pageRequests))
           });
         }
+      }
+    }
+
+    // if the SW was killed and restarted while monitoring was active,
+    // the debugger connection is lost. Re-attach to the current active tab.
+    if (this.isMonitoring && this.attachedTabs.size === 0) {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs.length > 0) {
+          const tab = tabs[0];
+          if (
+            tab.id !== undefined &&
+            tab.url &&
+            !tab.url.startsWith('chrome://') &&
+            !tab.url.startsWith('chrome-extension://')
+          ) {
+            // Detach first in case a stale session exists
+            await this.detachDebugger(tab.id);
+            await this.attachDebugger(tab.id, tab.url);
+          }
+        }
+      } catch (_e) {
+        // If re-attach fails (e.g. no active tab), reset monitoring state
+        this.isMonitoring = false;
+        await chrome.storage.local.set({ isMonitoring: false });
       }
     }
   }
@@ -143,32 +167,49 @@ class NetworkMonitor {
     // When the active tab changes, switch monitoring to new tab
     chrome.tabs.onActivated.addListener(async (activeInfo) => {
       if (!this.isMonitoring) return;
-      // Detach from previous tab(s)
+
+      // Pre-flight: fetch the new tab info BEFORE clearing any data.
+      // If the user opens an extension page (e.g. viewer.html) or a chrome:// page,
+      // do NOT disrupt the current monitoring session.
+      let newTab: chrome.tabs.Tab;
+      try {
+        newTab = await chrome.tabs.get(activeInfo.tabId);
+      } catch (_e) {
+        return;
+      }
+      if (
+        !newTab.url ||
+        newTab.url.startsWith('chrome://') ||
+        newTab.url.startsWith('chrome-extension://')
+      ) {
+        return;
+      }
+
+      // Safe to switch monitoring to the new real web tab.
       for (const oldTabId of this.attachedTabs) {
         await this.detachDebugger(oldTabId);
       }
       this.attachedTabs.clear();
       this.networkRequests.clear();
       this.tabUrls.clear();
-      // Attach to new active tab
-      try {
-        const tab = await chrome.tabs.get(activeInfo.tabId);
-        if (
-          tab.id !== undefined &&
-          tab.url &&
-          !tab.url.startsWith('chrome://') &&
-          !tab.url.startsWith('chrome-extension://')
-        ) {
-          this.tabUrls.set(tab.id, tab.url);
-          // Initialize new tab data structure
-          this.networkRequests.set(tab.id, {
-            currentUrl: tab.url,
-            pageRequests: new Map([[tab.url, []]])
-          });
-          await this.attachDebugger(tab.id, tab.url);
-        }
-      } catch (_e) {
-        console.error('Failed to switch monitoring to active tab');
+      // Persist the cleared state immediately
+      await this.saveState();
+
+      if (newTab.id !== undefined) {
+        this.tabUrls.set(newTab.id, newTab.url);
+        this.networkRequests.set(newTab.id, {
+          currentUrl: newTab.url,
+          pageRequests: new Map([[newTab.url, []]])
+        });
+        await this.attachDebugger(newTab.id, newTab.url);
+      }
+    });
+
+    // Bug1 fix: register the debugger event listener once here, not inside attachDebugger,
+    // to prevent duplicate listeners accumulating on every attach call.
+    chrome.debugger.onEvent.addListener((source, method, params) => {
+      if (source.tabId !== undefined && this.attachedTabs.has(source.tabId)) {
+        this.handleNetworkEvent(source.tabId, method, params);
       }
     });
 
@@ -290,7 +331,6 @@ class NetworkMonitor {
               page: pageName,
               fullUrl: pageUrl,
               validXHRPaths: new Map(),
-              unknownXHRPaths: new Set(),
               webSocketPaths: new Set()
             };
           }
@@ -343,8 +383,9 @@ class NetworkMonitor {
           let payload = '';
 
           if (successfulRequests.length > 0) {
-            const selectedRequest =
-              successfulRequests[Math.floor(Math.random() * successfulRequests.length)];
+            // Bug6 fix: use the first (earliest) successful request instead of a random one
+            // to guarantee deterministic output across multiple analyze calls.
+            const selectedRequest = successfulRequests[0];
 
             method = selectedRequest.method || '';
 
@@ -409,7 +450,7 @@ class NetworkMonitor {
         page: page.page,
         fullUrl: page.fullUrl,
         validXHRPaths: processPathMap(page.validXHRPaths),
-        unknownXHRPaths: Array.from(page.unknownXHRPaths),
+        unknownXHRPaths: [],
         webSocketPaths: Array.from(page.webSocketPaths)
       };
     });
@@ -432,16 +473,19 @@ class NetworkMonitor {
       const pathSegments = urlObj.pathname.split('/').filter((segment) => segment !== '');
       // Extract meaningful page name from URL
       // Examples:
-      // xxx.com/app/pageA?param=id -> pageA
-      // xxx.com/app/pageB?param=id -> pageB
-      if (pathSegments.length === 3) {
-        return pathSegments[1] + '-' + pathSegments[2];
-      } else if (pathSegments.length === 2) {
-        return pathSegments[pathSegments.length - 1]; // Last segment
+      // xxx.com/app/pageA?param=id         -> pageA        (2 segments)
+      // xxx.com/app/module/pageA           -> module-pageA (3 segments)
+      // xxx.com/app/module/sub/pageA/...   -> last 2 segments joined (4+ segments)
+      if (pathSegments.length === 0) {
+        return 'home';
       } else if (pathSegments.length === 1) {
         return pathSegments[0];
+      } else if (pathSegments.length === 2) {
+        return pathSegments[pathSegments.length - 1];
       } else {
-        return 'home';
+        // Bug8 fix: for 3+ segments take the last two, covers both 3-segment and
+        // deeper paths instead of falling through to a generic 'home'.
+        return pathSegments[pathSegments.length - 2] + '-' + pathSegments[pathSegments.length - 1];
       }
     } catch (_e) {
       return 'unknown';
@@ -503,9 +547,6 @@ class NetworkMonitor {
       await chrome.debugger.attach({ tabId }, '1.3');
       await chrome.debugger.sendCommand({ tabId }, 'Network.enable');
 
-      // Enable WebSocket monitoring
-      await chrome.debugger.sendCommand({ tabId }, 'Runtime.enable');
-
       this.attachedTabs.add(tabId);
       this.tabUrls.set(tabId, url);
 
@@ -516,13 +557,6 @@ class NetworkMonitor {
           pageRequests: new Map([[url, []]])
         });
       }
-
-      // Listen for network events
-      chrome.debugger.onEvent.addListener((source, method, params) => {
-        if (source.tabId === tabId) {
-          this.handleNetworkEvent(tabId, method, params);
-        }
-      });
     } catch (_error) {
       // Silently fail - debugger attach errors are usually non-critical
     }
@@ -572,14 +606,12 @@ class NetworkMonitor {
 
     const requests = tabData.pageRequests.get(currentUrl)!;
 
-    // Apply URL filter
-    if (p.url || (p.request && p.request.url)) {
-      const urlToTest = p.url || p.request!.url;
+    // Apply URL filter: prefer request.url (actual API endpoint) over p.url (document URL)
+    const urlToFilter = p.request?.url ?? p.url;
+    if (urlToFilter && this.appConfig.urlFilter) {
       try {
-        if (this.appConfig.urlFilter) {
-          const regex = new RegExp(this.appConfig.urlFilter, 'i');
-          if (!regex.test(urlToTest)) return; // Drop request due to filter
-        }
+        const regex = new RegExp(this.appConfig.urlFilter, 'i');
+        if (!regex.test(urlToFilter)) return; // Drop request due to filter
       } catch (_e) {
         // Regex might be invalid, just ignore
       }

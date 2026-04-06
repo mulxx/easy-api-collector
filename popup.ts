@@ -6,12 +6,14 @@ class NetworkMonitorPopup {
   tabUrls: Record<string, string>;
   pageGroupedRequests: PageData[];
   analysis: AnalysisResult | undefined;
+  private statusResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   toggleSwitch!: HTMLInputElement;
   statusText!: HTMLElement;
   analyzeAndDownloadBtn!: HTMLButtonElement;
   downloadHarBtn!: HTMLButtonElement;
   clearRequestsBtn!: HTMLButtonElement;
+  openViewerBtn!: HTMLButtonElement;
 
   constructor() {
     this.isMonitoring = false;
@@ -33,6 +35,7 @@ class NetworkMonitorPopup {
     ) as HTMLButtonElement;
     this.downloadHarBtn = document.getElementById('downloadHarBtn') as HTMLButtonElement;
     this.clearRequestsBtn = document.getElementById('clearRequests') as HTMLButtonElement;
+    this.openViewerBtn = document.getElementById('openViewerBtn') as HTMLButtonElement;
   }
 
   setupEventListeners() {
@@ -50,6 +53,10 @@ class NetworkMonitorPopup {
 
     this.clearRequestsBtn.addEventListener('click', () => {
       this.clearRequests();
+    });
+
+    this.openViewerBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL('viewer.html') });
     });
   }
   // #endregion
@@ -249,10 +256,17 @@ class NetworkMonitorPopup {
 
   // #region showTemporaryMessage
   showTemporaryMessage(message: string) {
-    const originalText = this.statusText.textContent;
+    // clear any in-flight reset timer before setting a new message,
+    // so rapid calls don't restore a stale intermediate text.
+    if (this.statusResetTimer !== null) {
+      clearTimeout(this.statusResetTimer);
+      this.statusResetTimer = null;
+    }
+    const monitoringText = `Monitoring: ${this.isMonitoring ? 'ON' : 'OFF'}`;
     this.statusText.textContent = message;
-    setTimeout(() => {
-      this.statusText.textContent = originalText;
+    this.statusResetTimer = setTimeout(() => {
+      this.statusText.textContent = monitoringText;
+      this.statusResetTimer = null;
     }, 2000);
   }
   // #endregion
