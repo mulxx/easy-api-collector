@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactECharts from 'echarts-for-react';
-import './index.css';
+import "./index.scss";
 
 // Ensure the NetworkRequest type mimics what we export in background.
 interface NetworkRequest {
@@ -23,14 +23,26 @@ function Panel() {
     const tabId = chrome.devtools?.inspectedWindow?.tabId?.toString() || "";
 
     const fetchRequests = () => {
-      chrome.runtime.sendMessage({ action: "getRequests" }, (response) => {
-        if (response && response.requests) {
-          // If we run outside the panel context, maybe fallback to all requests for debugging.
-          const tabData = response.requests[tabId] || Object.values(response.requests).flat() || [];
-          setRequests(tabData as NetworkRequest[]);
-        }
-      });
+      try {
+        if (!chrome?.runtime?.id) return;
+        chrome.runtime.sendMessage({ action: "getRequests" }, (response) => {
+          try {
+            if (chrome.runtime.lastError) return;
+
+            if (response && response.requests) {
+              // If we run outside the panel context, maybe fallback to all requests for debugging.
+              const tabData = response.requests[tabId] || Object.values(response.requests).flat() || [];
+              setRequests(tabData as NetworkRequest[]);
+            }
+          } catch (err) {
+            // Ignore context invalidation in callback
+          }
+        });
+      } catch (e) {
+        // Ignore context invalidation directly
+      }
     };
+
 
     fetchRequests();
     const interval = setInterval(fetchRequests, 2000); // Polling for updates

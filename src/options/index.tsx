@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { StorageService, AppConfig, DEFAULT_CONFIG } from '../../utils/StorageService';
-import './index.css';
+import './index.scss';
 
 function Options() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
